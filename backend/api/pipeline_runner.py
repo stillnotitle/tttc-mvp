@@ -18,6 +18,32 @@ from config import settings
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+class NumpyEncoder(json.JSONEncoder):
+    """NumPy型をJSON対応の型に変換するカスタムエンコーダー"""
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NumpyEncoder, self).default(obj)
+
+def convert_numpy_types(obj):
+    """ネストされたデータ構造内のNumPy型をPython標準型に変換"""
+    if isinstance(obj, dict):
+        return {k: convert_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(v) for v in obj]
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj
+
 class PipelineRunner:
     """パイプライン実行クラス"""
     
@@ -72,6 +98,8 @@ class PipelineRunner:
             
             # 抽出結果を保存
             args_df = pd.DataFrame(extracted_args)
+            # NumPy型を標準のPython型に変換
+            args_df = args_df.astype(object).where(pd.notnull(args_df), None)
             args_df.to_csv(os.path.join(output_dir, "args.csv"), index=False)
             
             # 3. クラスタリング
@@ -114,10 +142,13 @@ class PipelineRunner:
                 }
             }
             
+            # NumPy型を標準のPython型に変換
+            result = convert_numpy_types(result)
+            
             # 結果をJSONファイルとして保存
             result_path = os.path.join(output_dir, "result.json")
             with open(result_path, "w", encoding="utf-8") as f:
-                json.dump(result, f, ensure_ascii=False, indent=2)
+                json.dump(result, f, ensure_ascii=False, indent=2, cls=NumpyEncoder)
             
             # ステータスを更新
             projects_db[project_id]["status"] = "completed"

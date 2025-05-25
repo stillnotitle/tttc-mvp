@@ -22,10 +22,14 @@ class VisualizationGenerator:
         
         for cluster in clusters:
             # 各クラスターの議論を座標でソート（視覚的な一貫性のため）
-            sorted_args = sorted(
-                cluster['arguments'],
-                key=lambda x: (x['x'], x['y'])
-            )
+            try:
+                sorted_args = sorted(
+                    cluster['arguments'],
+                    key=lambda x: (x.get('x', 0), x.get('y', 0))
+                )
+            except Exception as e:
+                logger.error(f"Error sorting arguments: {e}")
+                sorted_args = cluster['arguments']
             
             viz_cluster = {
                 "cluster_id": cluster['cluster_id'],
@@ -40,8 +44,8 @@ class VisualizationGenerator:
                         "comment_id": arg['comment_id'],
                         "argument": arg['argument'],
                         "summary": arg['summary'],
-                        "x": arg['x'],
-                        "y": arg['y']
+                        "x": arg.get('x', 0),
+                        "y": arg.get('y', 0)
                     }
                     for arg in sorted_args
                 ]
@@ -58,7 +62,7 @@ class VisualizationGenerator:
             "stats": {
                 "total_clusters": len(clusters),
                 "total_arguments": sum(c['size'] for c in clusters),
-                "avg_cluster_size": np.mean([c['size'] for c in clusters])
+                "avg_cluster_size": float(np.mean([c['size'] for c in clusters]))
             }
         }
     
@@ -80,7 +84,7 @@ class VisualizationGenerator:
         
         # 議論の分布について
         sizes = [c['size'] for c in clusters]
-        if np.std(sizes) > np.mean(sizes) * 0.5:
+        if float(np.std(sizes)) > float(np.mean(sizes)) * 0.5:
             takeaways.append(
                 "意見は特定のテーマに集中する傾向が見られました。"
             )

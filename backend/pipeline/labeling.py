@@ -61,7 +61,7 @@ class ClusterLabeler:
             response = await self.client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": "あなたは議論のグループにわかりやすいラベルと要約を付ける専門家です。"},
+                    {"role": "system", "content": "あなたは議論のグループにわかりやすいラベルと要約を付ける専門家です。必ずJSON形式で回答してください。"},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
@@ -72,11 +72,17 @@ class ClusterLabeler:
             content = response.choices[0].message.content
             label_data = self._parse_label_response(content)
             
-            # クラスターの中心座標を計算
-            x_coords = [arg['x'] for arg in arguments]
-            y_coords = [arg['y'] for arg in arguments]
-            center_x = sum(x_coords) / len(x_coords)
-            center_y = sum(y_coords) / len(y_coords)
+            # クラスターの中心座標を計算（argumentsに座標が含まれている場合）
+            x_coords = [arg.get('x', 0) for arg in arguments if 'x' in arg]
+            y_coords = [arg.get('y', 0) for arg in arguments if 'y' in arg]
+            
+            if x_coords and y_coords:
+                center_x = sum(x_coords) / len(x_coords)
+                center_y = sum(y_coords) / len(y_coords)
+            else:
+                # 座標がない場合はランダムに配置
+                center_x = random.uniform(-5, 5)
+                center_y = random.uniform(-5, 5)
             
             return {
                 "cluster_id": cluster_id,
@@ -90,14 +96,25 @@ class ClusterLabeler:
             
         except Exception as e:
             logger.error(f"Error generating label for cluster {cluster_id}: {e}")
+            # エラー時のフォールバック
+            x_coords = [arg.get('x', 0) for arg in arguments if 'x' in arg]
+            y_coords = [arg.get('y', 0) for arg in arguments if 'y' in arg]
+            
+            if x_coords and y_coords:
+                center_x = sum(x_coords) / len(x_coords)
+                center_y = sum(y_coords) / len(y_coords)
+            else:
+                center_x = random.uniform(-5, 5)
+                center_y = random.uniform(-5, 5)
+            
             return {
                 "cluster_id": cluster_id,
                 "label": f"クラスター{cluster_id + 1}",
                 "summary": "ラベル生成に失敗しました",
                 "arguments": arguments,
                 "size": len(arguments),
-                "x": 0,
-                "y": 0
+                "x": center_x,
+                "y": center_y
             }
     
     def _build_label_prompt(self, arguments: List[Dict[str, Any]]) -> str:
@@ -105,7 +122,7 @@ class ClusterLabeler:
         arg_texts = [arg['argument'] for arg in arguments]
         args_str = "\n".join([f"- {text}" for text in arg_texts])
         
-        return f"""以下の議論のグループに、わかりやすいラベルと要約を付けてください。
+        return f"""以下の議論のグループに、他のグループと区別できる特徴的なラベルと要約を付けてください。
 
 議論一覧:
 {args_str}
@@ -119,20 +136,33 @@ class ClusterLabeler:
 
 注意事項：
 - ラベルは簡潔で覚えやすいものにしてください
+- 「公園施設」のような一般的すぎるラベルは避け、具体的な特徴を含めてください
 - 要約は議論の共通点や主要なテーマを表現してください
+- 他のグループと明確に区別できるラベルを付けてください
 - 日本語で出力してください
 """
     
     def _parse_label_response(self, content: str) -> Dict[str, str]:
         """ラベル生成の応答を解析"""
         try:
+            # コードブロックやマークダウンを削除
+            content = content.strip()
+            if content.startswith('```json'):
+                content = content[7:]
+            if content.startswith('```'):
+                content = content[3:]
+            if content.endswith('```'):
+                content = content[:-3]
+            content = content.strip()
+            
             data = json.loads(content)
             return {
                 'label': data.get('label', ''),
                 'summary': data.get('summary', '')
             }
-        except json.JSONDecodeError:
-            logger.error("Failed to parse label response as JSON")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse label response as JSON: {e}")
+            logger.error(f"Content was: {content}")
             return {
                 'label': '',
                 'summary': ''

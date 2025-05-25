@@ -121,6 +121,16 @@ class ArgumentExtractor:
     def _parse_extraction(self, content: str, comment_id: str) -> List[Dict[str, Any]]:
         """抽出結果を解析"""
         try:
+            # コードブロックやマークダウンを削除
+            content = content.strip()
+            if content.startswith('```json'):
+                content = content[7:]
+            if content.startswith('```'):
+                content = content[3:]
+            if content.endswith('```'):
+                content = content[:-3]
+            content = content.strip()
+            
             # JSONとして解析
             data = json.loads(content)
             arguments = data.get('arguments', [])
@@ -137,6 +147,7 @@ class ArgumentExtractor:
             
             return result
             
-        except json.JSONDecodeError:
-            logger.error(f"Failed to parse JSON for comment {comment_id}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON for comment {comment_id}: {e}")
+            logger.error(f"Content was: {content[:200]}...")
             return []
